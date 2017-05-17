@@ -11,9 +11,11 @@ import (
 
 // PQueue is a thread safe priorityqueue
 type PQueue struct {
-	q pq
-	c *sync.Cond
-	l *sync.RWMutex
+	q     pq
+	c     *sync.Cond
+	in    chan Item
+	out   chan Item
+	ready chan interface{}
 }
 
 // Item is the interface that is necessary for
@@ -24,33 +26,52 @@ type Item interface {
 
 // New returns a new queue
 func New() *PQueue {
-	lock := &sync.RWMutex{}
-	ch := &PQueue{
-		c: sync.NewCond(lock.RLocker()),
-		l: lock,
+	q := &PQueue{
+		c:     sync.NewCond(&sync.Mutex{}),
+		in:    make(chan Item),
+		ready: make(chan interface{}),
+		out:   make(chan Item),
 	}
-	heap.Init(&ch.q)
-	return ch
+	heap.Init(&q.q)
+
+	go func() {
+		for {
+			select {
+			case i := <-q.in:
+				q.c.L.Lock()
+				heap.Push(&q.q, i)
+				q.c.Signal()
+				q.c.L.Unlock()
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-q.ready:
+			}
+			q.c.L.Lock()
+			if q.q.Len() == 0 {
+				q.c.Wait()
+			}
+			x := heap.Pop(&q.q)
+			q.c.L.Unlock()
+			q.out <- x.(Item)
+		}
+	}()
+	return q
 }
 
 // Push adds a new item to the queue
-func (q *PQueue) Push(i interface{}) {
-	q.l.Lock()
-	heap.Push(&q.q, i)
-	q.l.Unlock()
-	q.c.Signal()
+func (q *PQueue) Push(i Item) {
+	q.in <- i
 }
 
 // Pop returns an element from the queue
 // blocks until it can return an element
-func (q *PQueue) Pop() interface{} {
-	q.c.L.Lock()
-	for q.q.Len() == 0 {
-		q.c.Wait()
-	}
-	x := heap.Pop(&q.q)
-	q.c.L.Unlock()
-	return x
+func (q *PQueue) Pop() Item {
+	q.ready <- nil
+	return <-q.out
 }
 
 type pq []Item

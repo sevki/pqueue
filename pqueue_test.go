@@ -36,7 +36,7 @@ func TestPQueue(t *testing.T) {
 
 func TestEmptyPQueue(t *testing.T) {
 	ctx := context.Background()
-	tctx, cancel := context.WithTimeout(ctx, time.Second)
+	tctx, _ := context.WithTimeout(ctx, time.Millisecond)
 	q := New()
 
 	x := func() <-chan interface{} {
@@ -44,7 +44,6 @@ func TestEmptyPQueue(t *testing.T) {
 		go func() {
 			poped := q.Pop()
 			_ = poped
-			cancel()
 			ch <- nil
 		}()
 		return ch
@@ -60,32 +59,31 @@ func TestEmptyPQueue(t *testing.T) {
 
 func TestPQueuePushAfterPop(t *testing.T) {
 	ctx := context.Background()
-	tctx, cancel := context.WithTimeout(ctx, time.Second)
+	tctx, _ := context.WithTimeout(ctx, time.Second)
 	q := New()
 
-	x := func() <-chan interface{} {
-		ch := make(chan interface{})
+	ch := make(chan interface{})
+
+	func() {
 		go func() {
 			poped := q.Pop()
 			_ = poped
-			cancel()
 			ch <- nil
 		}()
-		return ch
-	}
-	getChan := x()
+	}()
 	q.Push(pint(1))
+
 	select {
-	case <-getChan:
+	case <-ch:
 	case <-tctx.Done():
+		t.Log(tctx.Err())
 		t.Fail()
 	}
-
 }
 
 func TestPQueueConcurrent(t *testing.T) {
-	in := []pint{5, 3, 6, 2, 1, 4}
-	out := []int{6, 5, 4, 3, 2, 1}
+	in := []pint{2, 123, 12, 1, 11, 90}
+	out := []int{123, 90, 12, 11, 2, 1}
 
 	q := New()
 	var wg sync.WaitGroup
@@ -98,7 +96,7 @@ func TestPQueueConcurrent(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-
+	time.Sleep(500 * time.Millisecond)
 	for _, outed := range out {
 		poped := q.Pop()
 		if poped != pint(outed) {
