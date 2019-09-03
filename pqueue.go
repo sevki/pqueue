@@ -1,4 +1,4 @@
-// Copyright 2017 Sevki <s@sevki.org>. All rights reserved.
+// Copyright 2019 Sevki <s@sevki.org>. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -13,6 +13,7 @@ import (
 type PQueue struct {
 	q     pq
 	c     *sync.Cond
+	wg    sync.WaitGroup
 	in    chan Item
 	out   chan Item
 	ready chan interface{}
@@ -21,7 +22,7 @@ type PQueue struct {
 // Item is the interface that is necessary for
 // priorityqueue to figure out priorities
 type Item interface {
-	Priority() int
+	Priority() float64
 }
 
 // New returns a new queue
@@ -64,15 +65,20 @@ func New() *PQueue {
 
 // Push adds a new item to the queue
 func (q *PQueue) Push(i Item) {
+	q.wg.Add(1)
 	q.in <- i
 }
 
 // Pop returns an element from the queue
 // blocks until it can return an element
 func (q *PQueue) Pop() Item {
+	defer q.wg.Done()
 	q.ready <- nil
 	return <-q.out
 }
+
+// Wait blocks until no more Items are in the queue
+func (q *PQueue) Wait() { q.wg.Wait() }
 
 type pq []Item
 
